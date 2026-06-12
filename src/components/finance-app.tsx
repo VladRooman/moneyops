@@ -349,6 +349,11 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
 
   const monthDays = Array.from({ length: getDaysInMonth() }, (_, index) => index + 1)
   const currentDay = new Date().getDate()
+  const hasBudgetIncome = totalIncomeThisMonth > 0
+  const displayStatus = hasBudgetIncome ? currentStatus : "neutral"
+  const displayDailySafeLimit = hasBudgetIncome ? budget.dailySafeLimit : 0
+  const displayWeeklySafeLimit = hasBudgetIncome ? budget.weeklySafeLimit : 0
+  const displayRemainingVariableBudget = hasBudgetIncome ? budget.remainingVariableBudget : 0
 
   const handleIncomeSubmit = () => {
     const amount = Number(incomeForm.amount)
@@ -575,19 +580,21 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
     }))
   }
 
-  const statusText =
-    currentStatus === "safe"
-      ? "Siguranță bună"
+  const statusText = !hasBudgetIncome
+    ? "Adauga venituri"
+    : currentStatus === "safe"
+      ? "Siguranta buna"
       : currentStatus === "caution"
-        ? "Atenție la ritmul de cheltuieli"
+        ? "Atentie la ritmul de cheltuieli"
         : "Bugetul este sub presiune"
 
-  const statusDescription =
-    currentStatus === "safe"
-      ? "Poți cheltui cu disciplină fără să strici luna."
+  const statusDescription = !hasBudgetIncome
+    ? "Bugetul se calculeaza dupa ce introduci primul venit."
+    : currentStatus === "safe"
+      ? "Poti cheltui cu disciplina fara sa strici luna."
       : currentStatus === "caution"
-        ? "Mai există spațiu, dar orice achiziție mare trebuie verificată."
-        : "Cheltuielile curente depășesc cadrul sigur."
+        ? "Mai exista spatiu, dar orice achizitie mare trebuie verificata."
+        : "Cheltuielile curente depasesc cadrul sigur."
 
   const viewTitle = NAV_ITEMS.find((item) => item.id === activeView)?.label ?? "Dashboard"
 
@@ -616,7 +623,7 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                 <p>
                   RON rămași variabil:{" "}
                   <span className="font-medium text-foreground">
-                    {formatMoney(budget.remainingVariableBudget, state.budgetSettings.currency)}
+                    {formatMoney(displayRemainingVariableBudget, state.budgetSettings.currency)}
                   </span>
                 </p>
               </CardContent>
@@ -644,7 +651,7 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                       <span>{item.label}</span>
                       {item.id === "dashboard" ? (
                         <span className="text-xs text-muted-foreground">
-                          {formatMoney(budget.dailySafeLimit, state.budgetSettings.currency)} / zi
+                          {formatMoney(displayDailySafeLimit, state.budgetSettings.currency)} / zi
                         </span>
                       ) : null}
                     </span>
@@ -664,7 +671,7 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                     <Clock3 className="size-3.5" />
                     {todayLabel()}
                   </div>
-                  <Badge className={badgeClass(statusTone(currentStatus)) as string}>
+                  <Badge className={badgeClass(displayStatus) as string}>
                     {statusText}
                   </Badge>
                 </div>
@@ -672,8 +679,8 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                   <h2 className="font-heading text-2xl font-medium tracking-tight">{viewTitle}</h2>
                   <p className="max-w-2xl text-sm text-muted-foreground">
                     Cât poți cheltui azi fără să ruinezi luna:{" "}
-                    <span className={cn("font-medium", colorClass(currentStatus))}>
-                      {formatMoney(budget.dailySafeLimit, state.budgetSettings.currency)} / zi
+                    <span className={cn("font-medium", colorClass(displayStatus))}>
+                      {formatMoney(displayDailySafeLimit, state.budgetSettings.currency)} / zi
                     </span>
                     {" · "}
                     {formatMoney(budget.weeklySafeLimit, state.budgetSettings.currency)} / săptămână
@@ -729,10 +736,10 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                     <div>
                       <CardDescription>Întrebarea centrală</CardDescription>
                       <CardTitle className="max-w-3xl text-3xl leading-tight">
-                        How much can I safely spend today without ruining the month?
+                        Cât poți cheltui azi fără să strici luna?
                       </CardTitle>
                     </div>
-                    <Badge className={badgeClass(statusTone(currentStatus)) as string}>{statusText}</Badge>
+                    <Badge className={badgeClass(displayStatus) as string}>{statusText}</Badge>
                   </div>
                   <CardDescription className="max-w-2xl">
                     Calculul folosește veniturile din luna curentă, economiile obligatorii, contribuțiile la obiective,
@@ -741,34 +748,40 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                 </CardHeader>
                 {!hasIncomeThisMonth ? (
                   <CardContent className="pt-0">
-                    {emptyState(
-                      "Nu ai adaugat niciun venit luna aceasta.",
-                      "Adauga primul venit pentru a calcula bugetul lunii.",
-                      <Wallet className="size-5" />,
-                    )}
+                    <div className="space-y-3">
+                      {emptyState(
+                        "Nu ai adaugat niciun venit luna aceasta.",
+                        "Adauga primul venit pentru a calcula bugetul lunii.",
+                        <Wallet className="size-5" />,
+                      )}
+                      <Button onClick={() => setActiveView("income")}>
+                        Adaugă venit
+                        <ArrowRight data-icon="inline-end" />
+                      </Button>
+                    </div>
                   </CardContent>
                 ) : null}
                 <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <MetricCard
                     title="Limită sigură azi"
-                    value={formatMoney(budget.dailySafeLimit, state.budgetSettings.currency)}
+                    value={formatMoney(displayDailySafeLimit, state.budgetSettings.currency)}
                     helper={`${remainingDays} zile rămase în lună`}
                     icon={Coins}
-                    status={currentStatus}
+                    status={displayStatus}
                   />
                   <MetricCard
                     title="Limită sigură pe săptămână"
-                    value={formatMoney(budget.weeklySafeLimit, state.budgetSettings.currency)}
+                    value={formatMoney(displayWeeklySafeLimit, state.budgetSettings.currency)}
                     helper="Ritmul maxim recomandat"
                     icon={TrendingUp}
-                    status={currentStatus}
+                    status={displayStatus}
                   />
                   <MetricCard
                     title="Buget variabil rămas"
-                    value={formatMoney(budget.remainingVariableBudget, state.budgetSettings.currency)}
+                    value={formatMoney(displayRemainingVariableBudget, state.budgetSettings.currency)}
                     helper="După costurile fixe și economii"
                     icon={Wallet}
-                    status={currentStatus}
+                    status={displayStatus}
                   />
                   <MetricCard
                     title="Cheltuit luna aceasta"
@@ -792,12 +805,12 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                     <div className="flex items-center justify-between gap-4">
                       <div className="space-y-1">
                         <p className="text-sm text-muted-foreground">Semnal curent</p>
-                        <p className={cn("text-2xl font-medium", colorClass(currentStatus))}>{statusText}</p>
+                        <p className={cn("text-2xl font-medium", colorClass(displayStatus))}>{statusText}</p>
                       </div>
-                      <div className={cn("rounded-2xl border px-4 py-3", badgeClass(statusTone(currentStatus)))}>
+                      <div className={cn("rounded-2xl border px-4 py-3", badgeClass(displayStatus))}>
                         <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Daily safe</p>
                         <p className="text-lg font-medium tabular-nums">
-                          {formatMoney(budget.dailySafeLimit, state.budgetSettings.currency)}
+                          {formatMoney(displayDailySafeLimit, state.budgetSettings.currency)}
                         </p>
                       </div>
                     </div>
