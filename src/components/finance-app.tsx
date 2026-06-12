@@ -102,11 +102,33 @@ type BudgetFormState = {
 type GoalEditState = Record<
   string,
   {
+    name: string
     monthly_contribution: string
     current_amount: string
     target_amount: string
+    priority: string
   }
 >
+
+type FixedCostEditState = Record<
+  string,
+  {
+    name: string
+    amount: string
+    due_day: string
+    category: string
+    is_active: boolean
+  }
+>
+
+type GoalFormState = {
+  name: string
+  target_amount: string
+  current_amount: string
+  monthly_contribution: string
+  priority: string
+  is_active: boolean
+}
 
 const NAV_ITEMS: Array<{ id: ViewId; label: string; icon: typeof LayoutDashboard }> = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -191,6 +213,19 @@ function compactDateLabel(value: string) {
 function groupIncomeByCategory(entries: IncomeEntry[]) {
   return entries.reduce<Record<string, number>>((acc, entry) => {
     acc[entry.category] = (acc[entry.category] ?? 0) + entry.amount
+    return acc
+  }, {})
+}
+
+function createFixedCostEditState(costs: FixedCost[]): FixedCostEditState {
+  return costs.reduce<FixedCostEditState>((acc, cost) => {
+    acc[cost.id] = {
+      name: cost.name,
+      amount: String(cost.amount),
+      due_day: String(cost.due_day),
+      category: cost.category,
+      is_active: cost.is_active,
+    }
     return acc
   }, {})
 }
@@ -311,6 +346,17 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
     currency: initialState.budgetSettings.currency,
   }))
   const [goalEditState, setGoalEditState] = useState<GoalEditState>({})
+  const [fixedCostEditState, setFixedCostEditState] = useState<FixedCostEditState>(() =>
+    createFixedCostEditState(initialState.fixedCosts),
+  )
+  const [goalForm, setGoalForm] = useState<GoalFormState>(() => ({
+    name: "",
+    target_amount: "",
+    current_amount: "0",
+    monthly_contribution: "0",
+    priority: "5",
+    is_active: true,
+  }))
   const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -354,6 +400,7 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
   const displayDailySafeLimit = hasBudgetIncome ? budget.dailySafeLimit : 0
   const displayWeeklySafeLimit = hasBudgetIncome ? budget.weeklySafeLimit : 0
   const displayRemainingVariableBudget = hasBudgetIncome ? budget.remainingVariableBudget : 0
+  const displayAvailableForVariableSpending = hasBudgetIncome ? budget.availableForVariableSpending : 0
 
   const handleIncomeSubmit = () => {
     const amount = Number(incomeForm.amount)
@@ -569,15 +616,83 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
     }))
   }
 
+  const addGoal = () => {
+    const name = goalForm.name.trim()
+    const targetAmount = goalForm.target_amount.trim()
+    const currentAmount = Number(goalForm.current_amount)
+    const monthlyContribution = Number(goalForm.monthly_contribution)
+    const priority = Number(goalForm.priority)
+
+    if (!name || !priority) {
+      toast.error("Completeaza numele si prioritatea obiectivului.")
+      return
+    }
+
+    setState((current) => ({
+      ...current,
+      goals: [
+        {
+          id: createId("goal"),
+          owner_id: "vlad",
+          name,
+          target_amount: targetAmount === "" ? null : Number(targetAmount) || null,
+          current_amount: Number.isFinite(currentAmount) ? currentAmount : 0,
+          monthly_contribution: Number.isFinite(monthlyContribution) ? monthlyContribution : 0,
+          priority,
+          is_active: goalForm.is_active,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        ...current.goals,
+      ],
+    }))
+
+    setGoalForm({
+      name: "",
+      target_amount: "",
+      current_amount: "0",
+      monthly_contribution: "0",
+      priority: String(sortedGoals.length + 2),
+      is_active: true,
+    })
+    toast.success("Obiectivul a fost adaugat.")
+  }
+
   const setGoalDraft = (goal: Goal) => {
     setGoalEditState((current) => ({
       ...current,
       [goal.id]: {
+        name: goal.name,
         monthly_contribution: String(goal.monthly_contribution),
         current_amount: String(goal.current_amount),
         target_amount: goal.target_amount === null ? "" : String(goal.target_amount),
+        priority: String(goal.priority),
       },
     }))
+  }
+
+  const updateFixedCostDraft = (costId: string, next: Partial<FixedCostEditState[string]>) => {
+    setFixedCostEditState((current) => ({
+      ...current,
+      [costId]: { ...current[costId], ...next },
+    }))
+  }
+
+  const saveFixedCost = (costId: string) => {
+    const draft = fixedCostEditState[costId]
+    if (!draft || !draft.name.trim()) {
+      toast.error("Completeaza numele costului fix.")
+      return
+    }
+
+    updateFixedCost(costId, {
+      name: draft.name.trim(),
+      amount: Number(draft.amount) || 0,
+      due_day: Math.min(Math.max(Number(draft.due_day) || 1, 1), 31),
+      category: draft.category.trim() || "General",
+      is_active: draft.is_active,
+    })
+    toast.success("Costul fix a fost actualizat.")
   }
 
   const statusText = !hasBudgetIncome
@@ -683,7 +798,7 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                       {formatMoney(displayDailySafeLimit, state.budgetSettings.currency)} / zi
                     </span>
                     {" · "}
-                    {formatMoney(budget.weeklySafeLimit, state.budgetSettings.currency)} / săptămână
+                    {formatMoney(displayWeeklySafeLimit, state.budgetSettings.currency)} / săptămână
                   </p>
                 </div>
               </div>
@@ -1294,7 +1409,7 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
               <CardHeader>
                 <CardTitle>Costuri fixe</CardTitle>
                 <CardDescription>
-                  Activezi sau oprești fiecare cost, iar totalul intră automat în bugetul lunar.
+                  Poți edita direct fiecare cost, iar totalul intră automat în bugetul lunar.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1329,20 +1444,64 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                       <TableHead>Scadență</TableHead>
                       <TableHead>Sumă</TableHead>
                       <TableHead>Activ</TableHead>
+                      <TableHead>Acțiuni</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {sortedFixedCosts.map((cost) => (
                       <TableRow key={cost.id}>
-                        <TableCell className="font-medium">{cost.name}</TableCell>
-                        <TableCell>{cost.category}</TableCell>
-                        <TableCell>Ziua {cost.due_day}</TableCell>
-                        <TableCell className="tabular-nums">{formatMoney(cost.amount, state.budgetSettings.currency)}</TableCell>
+                        <TableCell className="min-w-40">
+                          <Input
+                            value={fixedCostEditState[cost.id]?.name ?? cost.name}
+                            onChange={(event) =>
+                              updateFixedCostDraft(cost.id, { name: event.target.value })
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="min-w-36">
+                          <Input
+                            value={fixedCostEditState[cost.id]?.category ?? cost.category}
+                            onChange={(event) =>
+                              updateFixedCostDraft(cost.id, { category: event.target.value })
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="min-w-28">
+                          <Input
+                            type="number"
+                            min="1"
+                            max="31"
+                            value={fixedCostEditState[cost.id]?.due_day ?? String(cost.due_day)}
+                            onChange={(event) =>
+                              updateFixedCostDraft(cost.id, { due_day: event.target.value })
+                            }
+                          />
+                        </TableCell>
+                        <TableCell className="min-w-32">
+                          <Input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={fixedCostEditState[cost.id]?.amount ?? String(cost.amount)}
+                            onChange={(event) =>
+                              updateFixedCostDraft(cost.id, { amount: event.target.value })
+                            }
+                          />
+                        </TableCell>
                         <TableCell>
                           <Switch
-                            checked={cost.is_active}
-                            onCheckedChange={(checked) => updateFixedCost(cost.id, { is_active: Boolean(checked) })}
+                            checked={fixedCostEditState[cost.id]?.is_active ?? cost.is_active}
+                            onCheckedChange={(checked) =>
+                              updateFixedCostDraft(cost.id, { is_active: Boolean(checked) })
+                            }
                           />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" onClick={() => saveFixedCost(cost.id)}>
+                              Salvează
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1357,23 +1516,121 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
               <CardHeader>
                 <CardTitle>Obiective</CardTitle>
                 <CardDescription>
-                  Țintele active reduc bugetul disponibil doar când ai o contribuție lunară setată.
+                  Adaugi și editezi obiectivele manual. Contribuțiile active reduc bugetul disponibil.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="rounded-2xl border border-border/60 bg-background/40 p-4">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">Adaugă obiectiv</p>
+                      <p className="text-sm text-muted-foreground">Completează ce vrei să urmărești luna aceasta.</p>
+                    </div>
+                    <Switch
+                      checked={goalForm.is_active}
+                      onCheckedChange={(checked) => setGoalForm((current) => ({ ...current, is_active: Boolean(checked) }))}
+                    />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label htmlFor="new-goal-name">Nume</Label>
+                      <Input
+                        id="new-goal-name"
+                        value={goalForm.name}
+                        onChange={(event) => setGoalForm((current) => ({ ...current, name: event.target.value }))}
+                        placeholder="Ex: Laptop nou"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-goal-target">Țintă</Label>
+                      <Input
+                        id="new-goal-target"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={goalForm.target_amount}
+                        onChange={(event) =>
+                          setGoalForm((current) => ({ ...current, target_amount: event.target.value }))
+                        }
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-goal-contribution">Contribuție</Label>
+                      <Input
+                        id="new-goal-contribution"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={goalForm.monthly_contribution}
+                        onChange={(event) =>
+                          setGoalForm((current) => ({ ...current, monthly_contribution: event.target.value }))
+                        }
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-goal-current">Curent</Label>
+                      <Input
+                        id="new-goal-current"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={goalForm.current_amount}
+                        onChange={(event) =>
+                          setGoalForm((current) => ({ ...current, current_amount: event.target.value }))
+                        }
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-goal-priority">Prioritate</Label>
+                      <Input
+                        id="new-goal-priority"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={goalForm.priority}
+                        onChange={(event) =>
+                          setGoalForm((current) => ({ ...current, priority: event.target.value }))
+                        }
+                        placeholder="5"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <Button onClick={addGoal}>
+                      Adaugă obiectiv
+                      <ArrowRight data-icon="inline-end" />
+                    </Button>
+                  </div>
+                </div>
+
                 <div className="grid gap-3 xl:grid-cols-2">
                   {sortedGoals.map((goal) => {
                     const draft = goalEditState[goal.id] ?? {
+                      name: goal.name,
                       monthly_contribution: String(goal.monthly_contribution),
                       current_amount: String(goal.current_amount),
                       target_amount: goal.target_amount === null ? "" : String(goal.target_amount),
+                      priority: String(goal.priority),
                     }
 
                     return (
                       <div key={goal.id} className="space-y-3 rounded-2xl border border-border/60 bg-background/40 p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div className="space-y-1">
-                            <p className="font-medium">{goal.name}</p>
+                            <Label htmlFor={`${goal.id}-name`}>Nume obiectiv</Label>
+                            <Input
+                              id={`${goal.id}-name`}
+                              value={draft.name}
+                              onChange={(event) =>
+                                setGoalEditState((current) => ({
+                                  ...current,
+                                  [goal.id]: { ...draft, name: event.target.value },
+                                }))
+                              }
+                            />
                             <p className="text-xs text-muted-foreground">
                               {goal.target_amount === null
                                 ? "Seteaza o tinta pentru acest obiectiv."
@@ -1448,14 +1705,32 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                             />
                           </div>
                         </div>
+                        <div className="space-y-1 sm:max-w-32">
+                          <Label htmlFor={`${goal.id}-priority`}>Prioritate</Label>
+                          <Input
+                            id={`${goal.id}-priority`}
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={draft.priority}
+                            onChange={(event) =>
+                              setGoalEditState((current) => ({
+                                ...current,
+                                [goal.id]: { ...draft, priority: event.target.value },
+                              }))
+                            }
+                          />
+                        </div>
 
                         <div className="flex flex-wrap gap-2">
                           <Button
                             onClick={() => {
                               updateGoal(goal.id, {
+                                name: draft.name.trim() || goal.name,
                                 current_amount: Number(draft.current_amount) || 0,
                                 target_amount: draft.target_amount === "" ? null : Number(draft.target_amount) || null,
                                 monthly_contribution: Number(draft.monthly_contribution) || 0,
+                                priority: Number(draft.priority) || goal.priority,
                               })
                               toast.success("Obiectivul a fost actualizat.")
                             }}
@@ -1636,10 +1911,10 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                   <div className="grid gap-3 sm:grid-cols-2">
                     <MetricCard
                       title="Disponibil pentru variabil"
-                      value={formatMoney(budget.availableForVariableSpending, state.budgetSettings.currency)}
+                      value={formatMoney(displayAvailableForVariableSpending, state.budgetSettings.currency)}
                       helper="Înainte de tranzacții"
                       icon={Wallet}
-                      status={budget.availableForVariableSpending < 0 ? "danger" : budget.availableForVariableSpending < budget.dailySafeLimit * 3 ? "caution" : "safe"}
+                      status={displayStatus === "neutral" ? "neutral" : budget.availableForVariableSpending < 0 ? "danger" : budget.availableForVariableSpending < budget.dailySafeLimit * 3 ? "caution" : "safe"}
                     />
                     <MetricCard
                       title="Cheltuit luna aceasta"
@@ -1652,7 +1927,7 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                   <div className="rounded-2xl border border-border/60 bg-background/40 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm text-muted-foreground">Mesaj de revizie</p>
-                      <Badge className={badgeClass(statusTone(currentStatus)) as string}>{statusText}</Badge>
+                      <Badge className={badgeClass(displayStatus) as string}>{statusText}</Badge>
                     </div>
                     <p className="mt-2 text-base text-foreground">{statusDescription}</p>
                   </div>
@@ -1722,10 +1997,10 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                 <div className="grid gap-3 sm:grid-cols-3">
                   <MetricCard
                     title="Limita zilnică"
-                    value={formatMoney(budget.dailySafeLimit, state.budgetSettings.currency)}
+                    value={formatMoney(displayDailySafeLimit, state.budgetSettings.currency)}
                     helper="Baza pe care te poți sprijini"
                     icon={CalendarDays}
-                    status={currentStatus}
+                    status={displayStatus}
                   />
                   <MetricCard
                     title="Zile rămase"
@@ -1750,14 +2025,19 @@ export function FinanceApp({ initialState = seedFinanceState }: { initialState?:
                       <div
                         key={day}
                         className={cn(
-                          "min-h-24 rounded-2xl border border-border/60 bg-background/40 p-2",
-                          isToday && "border-safe/40 bg-safe/10",
+                          "min-h-24 rounded-2xl border border-border/60 bg-background/40 p-2 transition-colors",
+                          isToday && "border-safe/50 bg-safe/10 ring-1 ring-safe/30",
                         )}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs uppercase tracking-[0.22em] text-muted-foreground">Ziua</span>
                           <span className={cn("text-sm font-medium", isToday && "text-safe")}>{day}</span>
                         </div>
+                        {isToday ? (
+                          <div className="mt-2 inline-flex rounded-full border border-safe/30 bg-safe/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-safe">
+                            Astăzi
+                          </div>
+                        ) : null}
                         <div className="mt-3 space-y-1">
                           {dueCosts.length > 0 ? (
                             dueCosts.map((cost) => (
